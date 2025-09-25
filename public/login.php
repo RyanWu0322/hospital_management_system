@@ -1,8 +1,10 @@
 <?php
 session_start();
 include '../config/config.php';
+include '../includes/csrf.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    checkCSRFToken();
     $username = $_POST['username'];
     $password = $_POST['password'];
     
@@ -21,12 +23,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $_SESSION['user_id'] = $id;
             $_SESSION['username'] = $username;
             $_SESSION['role'] = $role;
-            
+            $_SESSION['ip_address'] = $_SERVER['REMOTE_ADDR'];
+            $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
+            $_SESSION['last_activity'] = time();
+            $_SESSION['session_regenerated'] = time();
+
+            // 重新生成會話ID以防會話固定攻擊
+            session_regenerate_id(true);
+
             // 成功登入後重置失敗次數
             $stmt = $conn->prepare('UPDATE users SET failed_attempts = 0 WHERE id = ?');
             $stmt->bind_param('i', $id);
             $stmt->execute();
-            
+
             header('Location: dashboard.php');
             exit();
         } else {
@@ -101,6 +110,7 @@ d="M-160 44c30 0
                     <input type="checkbox" name="remember_me" id="remember_me">
                     <label for="remember_me">記住帳號密碼 (非本人電腦請勿點選)</label>
                 </div>
+                <?php echo getCSRFTokenField(); ?>
                 <button type="submit">登入系統</button>
             </form>
         </div>

@@ -2,12 +2,24 @@
 session_start();
 include '../includes/session.php';
 include '../config/config.php';
+include '../includes/csrf.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $total_beds = $_POST['total_beds'];
-    // 假設這裡有邏輯來更新病床數量
-    $conn->query("UPDATE beds SET bed_number = $total_beds");
-    echo "<script>alert('病床數量已更新');</script>";
+    checkCSRFToken();
+    $total_beds = isset($_POST['total_beds']) ? (int)$_POST['total_beds'] : 0;
+
+    if ($total_beds <= 0) {
+        echo "<script>alert('請輸入有效的病床數量');</script>";
+    } else {
+        $stmt = $conn->prepare("UPDATE beds SET bed_number = ?");
+        $stmt->bind_param('i', $total_beds);
+
+        if ($stmt->execute()) {
+            echo "<script>alert('病床數量已更新');</script>";
+        } else {
+            echo "<script>alert('更新失敗');</script>";
+        }
+    }
 }
 ?>
 
@@ -24,6 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <form method="post" action="">
             <label for="total_beds">病床總數</label>
             <input type="number" name="total_beds" id="total_beds" required><br>
+            <?php echo getCSRFTokenField(); ?>
             <button type="submit">更新</button>
         </form>
     </div>

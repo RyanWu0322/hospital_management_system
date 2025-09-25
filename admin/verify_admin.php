@@ -1,8 +1,10 @@
 <?php
 session_start();
 include '../config/config.php';
+include '../includes/csrf.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    checkCSRFToken();
     $password = $_POST['password']; 
     $admin_password = 'admin'; //admin預設密碼
 
@@ -28,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <form method="post" action="">
             <label for="password">密碼：</label>
             <input type="password" name="password" id="password" required>
+            <?php echo getCSRFTokenField(); ?>
             <button type="submit">提交</button>
         </form>
     </div>

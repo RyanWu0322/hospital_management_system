@@ -2,32 +2,46 @@
 session_start();
 include '../includes/session.php';
 include '../config/config.php';
+include '../includes/csrf.php';
 
-// 處理鎖定/解鎖使用者請求
-if (isset($_GET['toggle_lock'])) {
-    $user_id = $_GET['toggle_lock'];
-    $user_status = $_GET['status'];
-    $new_status = $user_status == 'active' ? 'locked' : 'active';
+// 處理POST請求（鎖定/解鎖和刪除用戶）
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    checkCSRFToken();
 
-    $stmt = $conn->prepare("UPDATE users SET status = ? WHERE id = ?");
-    $stmt->bind_param('si', $new_status, $user_id);
-    if ($stmt->execute()) {
-        echo "<script>alert('使用者狀態已更新');</script>";
-    } else {
-        echo "<script>alert('更新失敗');</script>";
+    if (isset($_POST['toggle_lock'])) {
+        $user_id = (int)$_POST['toggle_lock'];
+        $user_status = $_POST['status'];
+        $new_status = $user_status == 'active' ? 'locked' : 'active';
+
+        $stmt = $conn->prepare("UPDATE users SET status = ? WHERE id = ?");
+        $stmt->bind_param('si', $new_status, $user_id);
+        if ($stmt->execute()) {
+            echo "<script>alert('使用者狀態已更新');</script>";
+        } else {
+            echo "<script>alert('更新失敗');</script>";
+        }
     }
-}
 
-// 處理刪除使用者請求
-if (isset($_GET['delete_user'])) {
-    $user_id = $_GET['delete_user'];
+    if (isset($_POST['delete_user'])) {
+        $user_id = (int)$_POST['delete_user'];
 
-    $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
-    $stmt->bind_param('i', $user_id);
-    if ($stmt->execute()) {
-        echo "<script>alert('使用者已刪除');</script>";
-    } else {
-        echo "<script>alert('刪除失敗');</script>";
+        // 防止刪除admin用戶
+        $check_stmt = $conn->prepare("SELECT username FROM users WHERE id = ?");
+        $check_stmt->bind_param('i', $user_id);
+        $check_stmt->execute();
+        $result = $check_stmt->get_result()->fetch_assoc();
+
+        if ($result && $result['username'] !== 'admin') {
+            $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
+            $stmt->bind_param('i', $user_id);
+            if ($stmt->execute()) {
+                echo "<script>alert('使用者已刪除');</script>";
+            } else {
+                echo "<script>alert('刪除失敗');</script>";
+            }
+        } else {
+            echo "<script>alert('無法刪除管理員帳戶');</script>";
+        }
     }
 }
 
@@ -109,18 +123,27 @@ $users = $conn->query("SELECT id, username, role, status FROM users");
             <tbody>
                 <?php while ($row = $users->fetch_assoc()): ?>
                     <tr>
-                        <td><?php echo $row['username']; ?></td>
+                        <td><?php echo htmlspecialchars($row['username'], ENT_QUOTES, 'UTF-8'); ?></td>
                         <td>******</td>
-                        <td><?php echo $row['role']; ?></td>
+                        <td><?php echo htmlspecialchars($row['role'], ENT_QUOTES, 'UTF-8'); ?></td>
                         <td class="<?php echo $row['status'] == 'active' ? 'status-active' : 'status-locked'; ?>">
-                            <?php echo $row['status']; ?>
+                            <?php echo htmlspecialchars($row['status'], ENT_QUOTES, 'UTF-8'); ?>
                         </td>
                         <td class="action-buttons">
                             <?php if ($row['username'] == 'admin'): ?>
                                 <span class="no-action">不允許更動</span>
                             <?php else: ?>
-                                <a href="account_management.php?toggle_lock=<?php echo $row['id']; ?>&status=<?php echo $row['status']; ?>" onclick="return confirm('確定要<?php echo $row['status'] == 'active' ? '鎖定' : '解鎖'; ?>這個使用者嗎？')"><?php echo $row['status'] == 'active' ? '鎖定' : '解鎖'; ?></a>
-                                <a href="account_management.php?delete_user=<?php echo $row['id']; ?>" onclick="return confirm('確定要刪除此使用者嗎？')">刪除</a>
+                                <form method="post" style="display:inline;">
+                                    <?php echo getCSRFTokenField(); ?>
+                                    <input type="hidden" name="toggle_lock" value="<?php echo htmlspecialchars($row['id'], ENT_QUOTES, 'UTF-8'); ?>">
+                                    <input type="hidden" name="status" value="<?php echo htmlspecialchars($row['status'], ENT_QUOTES, 'UTF-8'); ?>">
+                                    <button type="submit" onclick="return confirm('確定要<?php echo $row['status'] == 'active' ? '鎖定' : '解鎖'; ?>這個使用者嗎？')" style="background:none;border:none;color:blue;text-decoration:none;cursor:pointer;"><?php echo $row['status'] == 'active' ? '鎖定' : '解鎖'; ?></button>
+                                </form>
+                                <form method="post" style="display:inline;">
+                                    <?php echo getCSRFTokenField(); ?>
+                                    <input type="hidden" name="delete_user" value="<?php echo htmlspecialchars($row['id'], ENT_QUOTES, 'UTF-8'); ?>">
+                                    <button type="submit" onclick="return confirm('確定要刪除此使用者嗎？')" style="background:none;border:none;color:blue;text-decoration:none;cursor:pointer;">刪除</button>
+                                </form>
                             <?php endif; ?>
                         </td>
                     </tr>

@@ -2,25 +2,77 @@
 session_start();
 include '../includes/session.php';
 include '../config/config.php';
+include '../includes/csrf.php';
+include '../includes/validation.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $patient_id = $_POST['patient_id'];
-    $doctor_id = $_SESSION['user_id']; // Assuming the logged-in user is the doctor
-    $nurse_id = $_POST['nurse_id'];
-    $condition = $_POST['condition'];
-    $remarks = $_POST['remarks'];
+    checkCSRFToken();
+
+    // 驗證輸入
+    $patient_id = validatePatientId($_POST['patient_id']);
+    $nurse_id = validateId($_POST['nurse_id']);
+    $condition = validateCondition($_POST['condition']);
+    $remarks = validateRemarks($_POST['remarks']);
+
+    if (!$patient_id) {
+        echo "<script>alert('請輸入有效的病人ID（正整數）');</script>";
+        exit();
+    }
+    if (!$nurse_id) {
+        echo "<script>alert('請選擇有效的護士');</script>";
+        exit();
+    }
+    if (!$condition) {
+        echo "<script>alert('病況不能為空且不能超過100字元');</script>";
+        exit();
+    }
+    if (!$remarks) {
+        echo "<script>alert('備註不能為空且不能超過1000字元');</script>";
+        exit();
+    }
+
+    $doctor_id = $_SESSION['user_id'];
     $inpatient = isset($_POST['inpatient']) ? 1 : 0;
     $record_date = date('Y-m-d');
     $photo = '';
 
     // 處理照片上傳
     if (!empty($_FILES['photo']['name'])) {
-        $photo = 'uploads/' . basename($_FILES['photo']['name']);
+        $upload_dir = '../uploads/';
+
+        // 檢查檔案大小 (最大 5MB)
+        if ($_FILES['photo']['size'] > 5 * 1024 * 1024) {
+            echo "<script>alert('照片檔案大小不能超過 5MB');</script>";
+            exit();
+        }
+
+        // 檢查檔案類型
+        $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime_type = finfo_file($finfo, $_FILES['photo']['tmp_name']);
+        finfo_close($finfo);
+
+        if (!in_array($mime_type, $allowed_types)) {
+            echo "<script>alert('只允許上傳 JPEG、PNG 或 GIF 圖片檔案');</script>";
+            exit();
+        }
+
+        // 生成安全的檔案名稱
+        $extension = pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION);
+        $safe_filename = uniqid('medical_', true) . '.' . $extension;
+        $photo = 'uploads/' . $safe_filename;
+
+        // 確保上傳目錄存在
+        if (!file_exists($upload_dir)) {
+            mkdir($upload_dir, 0755, true);
+        }
+
         if (move_uploaded_file($_FILES['photo']['tmp_name'], '../' . $photo)) {
             $photo_uploaded = true;
         } else {
             $photo_uploaded = false;
             echo "<script>alert('照片上傳失敗');</script>";
+            exit();
         }
     }
 
@@ -133,7 +185,7 @@ $medical_records_result = $conn->query("SELECT mr.id, mr.patient_id, mr.doctor_i
             <label for="nurse_id">護士：</label>
             <select name="nurse_id" id="nurse_id" required>
                 <?php while ($nurse = $nurses->fetch_assoc()): ?>
-                    <option value="<?php echo $nurse['id']; ?>"><?php echo $nurse['username']; ?></option>
+                    <option value="<?php echo htmlspecialchars($nurse['id'], ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($nurse['username'], ENT_QUOTES, 'UTF-8'); ?></option>
                 <?php endwhile; ?>
             </select>
             <label for="condition">病況：</label>
@@ -189,6 +241,7 @@ $medical_records_result = $conn->query("SELECT mr.id, mr.patient_id, mr.doctor_i
             </div>
             <label for="photo">病歷照片：</label>
             <input type="file" name="photo" id="photo">
+            <?php echo getCSRFTokenField(); ?>
             <button type="submit">新增病歷</button>
         </form>
         <table>
@@ -208,17 +261,17 @@ $medical_records_result = $conn->query("SELECT mr.id, mr.patient_id, mr.doctor_i
             <tbody>
                 <?php while ($row = $medical_records_result->fetch_assoc()): ?>
                     <tr>
-                        <td><?php echo $row['id']; ?></td>
-                        <td><?php echo $row['patient_id']; ?></td>
-                        <td><?php echo $row['doctor_name']; ?></td>
-                        <td><?php echo $row['nurse_name']; ?></td>
-                        <td><?php echo $row['condition']; ?></td>
-                        <td><?php echo $row['record_date']; ?></td>
+                        <td><?php echo htmlspecialchars($row['id'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><?php echo htmlspecialchars($row['patient_id'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><?php echo htmlspecialchars($row['doctor_name'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><?php echo htmlspecialchars($row['nurse_name'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><?php echo htmlspecialchars($row['condition'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><?php echo htmlspecialchars($row['record_date'], ENT_QUOTES, 'UTF-8'); ?></td>
                         <td><?php echo $row['inpatient'] == 1 ? '是' : '否'; ?></td>
-                        <td><img src="../<?php echo $row['photo']; ?>" alt="病歷照片" width="100"></td>
+                        <td><img src="../<?php echo htmlspecialchars($row['photo'], ENT_QUOTES, 'UTF-8'); ?>" alt="病歷照片" width="100"></td>
                         <td>
-                            <a href="edit_medical_record.php?record_id=<?php echo $row['id']; ?>">編輯</a>
-                            <a href="delete_medical_record.php?record_id=<?php echo $row['id']; ?>&patient_id=<?php echo $row['patient_id']; ?>" onclick="return confirm('確定要刪除這個病歷嗎？')">刪除</a>
+                            <a href="edit_medical_record.php?record_id=<?php echo urlencode($row['id']); ?>">編輯</a>
+                            <a href="delete_medical_record.php?record_id=<?php echo urlencode($row['id']); ?>&patient_id=<?php echo urlencode($row['patient_id']); ?>" onclick="return confirm('確定要刪除這個病歷嗎？')">刪除</a>
                         </td>
                     </tr>
                 <?php endwhile; ?>

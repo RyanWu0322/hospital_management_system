@@ -2,19 +2,49 @@
 session_start();
 include '../includes/session.php';
 include '../config/config.php';
+include '../includes/csrf.php';
+include '../includes/validation.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $username = $_POST['username'];
-    $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-    $role = $_POST['role'];
-    $specialty = $role == 'doctor' ? $_POST['specialty'] : null;
+    checkCSRFToken();
 
-    $stmt = $conn->prepare('INSERT INTO users (username, password, role, specialty) VALUES (?, ?, ?, ?)');
-    $stmt->bind_param('ssss', $username, $password, $role, $specialty);
-    if ($stmt->execute()) {
-        echo "<script>alert('用戶已成功新增');</script>";
+    // 驗證輸入
+    $username = validateUsername($_POST['username']);
+    $password = validatePassword($_POST['password']);
+    $role = validateRole($_POST['role']);
+
+    if (!$username) {
+        echo "<script>alert('用戶名格式不正確（3-50字元，只能包含字母、數字、底線、連字符）');</script>";
+    } elseif (!$password) {
+        echo "<script>alert('密碼至少要有6個字元');</script>";
+    } elseif (!$role) {
+        echo "<script>alert('請選擇有效的角色');</script>";
     } else {
-        echo "<script>alert('新增用戶失敗');</script>";
+        $specialty = null;
+        if ($role == 'doctor' && isset($_POST['specialty'])) {
+            $specialty = htmlspecialchars($_POST['specialty'], ENT_QUOTES, 'UTF-8');
+        }
+
+        $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+
+        // 檢查用戶名是否已存在
+        $check_stmt = $conn->prepare('SELECT id FROM users WHERE username = ?');
+        $check_stmt->bind_param('s', $username);
+        $check_stmt->execute();
+        $result = $check_stmt->get_result();
+
+        if ($result->num_rows > 0) {
+            echo "<script>alert('用戶名已存在');</script>";
+        } else {
+            $stmt = $conn->prepare('INSERT INTO users (username, password, role, specialty, status) VALUES (?, ?, ?, ?, ?)');
+            $status = 'active';
+            $stmt->bind_param('sssss', $username, $hashed_password, $role, $specialty, $status);
+            if ($stmt->execute()) {
+                echo "<script>alert('用戶已成功新增');</script>";
+            } else {
+                echo "<script>alert('新增用戶失敗');</script>";
+            }
+        }
     }
 }
 ?>
@@ -73,6 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <option value="急診醫學科">急診醫學科</option>
                 </select>
             </div>
+            <?php echo getCSRFTokenField(); ?>
             <button type="submit">新增用戶</button>
         </form>
     </div>

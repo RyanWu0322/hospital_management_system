@@ -1,4 +1,7 @@
 <?php
+// 包含錯誤處理器
+include_once __DIR__ . '/../includes/error_handler.php';
+
 $servername = "localhost";
 $username = "root";
 $password = "";
@@ -7,7 +10,8 @@ $dbname = "hospital_management_system_db";
 $conn = new mysqli($servername, $username, $password, $dbname);
 
 if ($conn->connect_error) {
-    die("連接失敗: " . $conn->connect_error);
+    logError("Database connection failed: " . $conn->connect_error);
+    die("資料庫連接失敗，請聯絡系統管理員。");
 }
 
 $admin_check = $conn->query("SELECT id FROM users WHERE username='admin'");
